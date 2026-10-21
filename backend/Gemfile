@@ -8,7 +8,7 @@ gem "argon2", "~> 2.3"
 gem "redis", "~> 5.4"
 gem "sidekiq", "~> 7.3"
 # Sidekiq 7 uses TimedStack#pop(timeout); connection_pool 3 removed that API.
-gem "connection_pool", "~> 2.5"
+gem "connection_pool", "~> 3.0"
 gem "rack-attack", "~> 6.8"
 gem "rack-cors", "~> 3.0"
 gem "rotp", "~> 6.3"
