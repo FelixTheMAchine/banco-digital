@@ -119,7 +119,7 @@ export function SecurityView() {
         {(dialog === "enrollment" || dialog === "disable") && <Field label="Senha atual" name="password" type="password" autoComplete="current-password" minLength={12} maxLength={128} required />}
         {dialog === "disable" && <p className="alert warning">Todas as sessões serão encerradas. Uma conta administrativa não pode desativar o segundo fator.</p>}
         {dialog !== "enrollment" && <Field label="Código do autenticador" name="code" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required={dialog === "enable"} placeholder="000000" />}
-        {(dialog === "step-up" || dialog === "disable") && <Field label="Ou código de recuperação" name="recovery_code" autoComplete="off" maxLength={16} pattern="[0-9a-f]{16}" hint="Use apenas um dos campos. O código de recuperação será consumido." />}
+        {(dialog === "step-up" || dialog === "disable") && <Field label="Ou código de recuperação" name="recovery_code" autoComplete="off" maxLength={32} pattern="[0-9a-f]{32}" hint="Use apenas um dos campos. O código de recuperação de 32 caracteres será consumido." />}
         <div className="form-actions"><button className="button secondary" type="button" disabled={action.busy} onClick={close}>Voltar</button><button className={`button${dialog === "disable" ? " danger" : ""}`} disabled={action.busy}>{action.busy ? "Verificando…" : dialog === "enrollment" ? "Continuar" : dialog === "disable" ? "Confirmar desativação" : "Confirmar código"}</button></div>
       </form>}
     </Modal>}
