@@ -6,6 +6,8 @@ O código implementa os módulos das fases 1 a 7. A Fase 8 registra os testes ef
 
 > **Relatório do projeto:** [entenda o que foi construído, como funciona, como executar e quais limites permanecem](docs/relatorio-do-projeto.md).
 
+> **Primeiro teste no Windows:** [guia passo a passo para baixar o ZIP, iniciar no VS Code e testar com Marina e Lucas](docs/guia-windows.md).
+
 ## Stack e estrutura
 
 - Ruby 3.4.11; Rails 8.1; PostgreSQL 17; Redis 7; Sidekiq/Active Job; RSpec.
