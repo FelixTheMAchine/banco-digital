@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Imagem de desenvolvimento. Produção exige imagem e operação endurecidas.
-FROM ruby:3.4.11-slim-trixie
+FROM ruby:4.0.6-slim-trixie
 
 ENV LANG=C.UTF-8 \
     BUNDLE_PATH=/usr/local/bundle \
