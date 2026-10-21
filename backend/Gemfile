@@ -5,7 +5,7 @@ gem "rails", "~> 8.1.0"
 gem "pg", "~> 1.6"
 gem "puma", "~> 8.0", ">= 8.0.2"
 gem "argon2", "~> 2.3"
-gem "redis", "~> 5.4"
+gem "redis", "~> 6.0"
 gem "sidekiq", "~> 7.3"
 # Sidekiq 7 uses TimedStack#pop(timeout); connection_pool 3 removed that API.
 gem "connection_pool", "~> 2.5"
