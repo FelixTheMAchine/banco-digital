@@ -1,0 +1,26 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "local" },
+  "build": {
+    "development": {
+      "node": "24.19.0",
+      "developmentClient": false,
+      "distribution": "internal",
+      "env": { "APP_VARIANT": "development" },
+      "android": { "buildType": "apk" },
+      "ios": { "simulator": true }
+    },
+    "preview": {
+      "node": "24.19.0",
+      "distribution": "internal",
+      "env": { "APP_VARIANT": "production" },
+      "android": { "buildType": "apk" }
+    },
+    "production": {
+      "node": "24.19.0",
+      "autoIncrement": true,
+      "env": { "APP_VARIANT": "production" },
+      "android": { "buildType": "app-bundle" }
+    }
+  },
+  "submit": { "production": {} }
+}

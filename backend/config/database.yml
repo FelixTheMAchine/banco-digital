@@ -1,0 +1,20 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", 5) %>
+  checkout_timeout: 5
+  variables:
+    statement_timeout: 5000
+    lock_timeout: 3000
+
+development:
+  <<: *default
+  url: <%= ENV.fetch("DATABASE_URL", "postgresql://localhost/banco_digital_development") %>
+
+test:
+  <<: *default
+  url: <%= ENV.fetch("TEST_DATABASE_URL", ENV.fetch("DATABASE_URL", "postgresql://localhost/banco_digital_test")) %>
+
+production:
+  <<: *default
+  url: <%= ENV.fetch("DATABASE_URL", "postgresql://localhost/banco_digital_production") %>

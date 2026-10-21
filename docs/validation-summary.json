@@ -1,0 +1,58 @@
+{
+  "simulation_only": true,
+  "backend": {
+    "ruby": "3.4.11",
+    "rails": "8.1.4",
+    "puma": "8.0.2",
+    "postgresql_major": 17,
+    "rspec_examples": 155,
+    "rspec_failures": 0,
+    "brakeman_warnings": 0,
+    "bundler_audit_known_vulnerabilities": 0,
+    "connection_pool": "2.5.5",
+    "real_worker_password_recovery_delivery": true,
+    "real_scheduled_transfer": {
+      "status": "completed",
+      "source_delta_cents": -1,
+      "destination_delta_cents": 1
+    }
+  },
+  "web": {
+    "unit_tests": 7,
+    "playwright_real_api_tests": 3,
+    "page_crashes_observed": 0,
+    "docker_build": true,
+    "production_npm_audit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "mobile": {
+    "expo": "58.0.17",
+    "react_native": "0.88.0",
+    "unit_tests": 34,
+    "doctor_checks_passed": 20,
+    "doctor_checks_total": 20,
+    "android_hermes_export": true,
+    "ios_hermes_export": true,
+    "signed_apk_aab_ipa_built": false,
+    "npm_audit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 15,
+      "critical": 0,
+      "total": 15
+    }
+  },
+  "api": {
+    "documented_paths": 55,
+    "documented_operations": 68
+  },
+  "native_release_blocked": true,
+  "external_publication_performed": false
+}

@@ -1,0 +1,4 @@
+export type User = { id: string; full_name: string; email: string; cpf: string; birth_date: string; phone: string; profession: string; monthly_salary_cents: number; other_income_cents: number; monthly_expenses_cents: number; existing_debts_cents: number; income_commitment_percent: string; investor_profile: string; status: string; role?: string; email_verified: boolean; mfa_enabled?:boolean; address: {street:string; number:string; city:string; state:string; postal_code:string} };
+export type Account = { id: string; number: string; branch: string; status: string; available_cents: number; blocked_cents: number; daily_limit_cents: number };
+export type Transaction = { id: string; kind?: string; type?: string; amount_cents: number; description?: string; created_at: string; status?: string; direction?: string; balance_cents?: number; [key:string]: unknown };
+export type Notice = { id:string; title:string; body:string; kind:string; read_at?:string; created_at:string };

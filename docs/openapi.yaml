@@ -1,0 +1,3921 @@
+openapi: 3.0.3
+info:
+  title: Aurora — API bancária de simulação
+  version: 1.0.0
+  description: API REST com dinheiro fictício. Inclui identidade, MFA, partidas dobradas, crédito e investimentos
+    educativos, administração e XLSX. Não executa operações financeiras reais. A web utiliza BFF e cookies
+    HttpOnly; clientes diretos usam Bearer.
+servers:
+- url: http://localhost:3001
+  description: Desenvolvimento local; produção exige TLS e revisão independente.
+tags:
+- name: Saúde
+- name: Autenticação
+- name: Perfil
+- name: Sessões
+- name: Contas
+- name: Movimentações
+- name: Agendamentos
+- name: Dashboard
+- name: Notificações
+- name: Crédito
+- name: Investimentos
+- name: Objetivos
+- name: Segurança
+- name: Administração
+security:
+- bearerAuth: []
+paths:
+  /up:
+    get:
+      tags:
+      - Saúde
+      operationId: liveness
+      summary: Verifica se o processo Rails responde
+      description: Resposta do endpoint nativo de saúde do Rails; não verifica dependências.
+      security: []
+      responses:
+        '200':
+          description: Processo disponível.
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: Processo não saudável.
+  /api/v1/health:
+    get:
+      tags:
+      - Saúde
+      operationId: readiness
+      summary: Verifica conexão com PostgreSQL e Redis
+      security: []
+      responses:
+        '200':
+          description: Dependências disponíveis.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - status
+                - simulation
+                properties:
+                  status:
+                    type: string
+                    enum:
+                    - ok
+                  simulation:
+                    type: boolean
+                    enum:
+                    - true
+        '503':
+          description: Uma dependência necessária está indisponível.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/auth/register:
+    post:
+      tags:
+      - Autenticação
+      operationId: register
+      summary: Cadastra um usuário fictício
+      description: Valida idade mínima, CPF, identidade, renda em centavos e unicidade. O cadastro não cria
+        uma conta bancária. O e-mail deve ser verificado antes do login. Papel, status, hashes e campos de
+        sessão não são atributos de cadastro público. O resultado de unicidade ainda pode revelar a existência
+        de um cadastro; risco residual sujeito a auditoria.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - user
+              properties:
+                user:
+                  $ref: '#/components/schemas/Registration'
+      responses:
+        '201':
+          $ref: '#/components/responses/UserResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Autenticação
+      operationId: login
+      summary: Inicia uma sessão para um usuário ativo com e-mail verificado
+      description: Credenciais inválidas e e-mail não verificado recebem erro genérico de autenticação.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - email
+              - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                  writeOnly: true
+                otp_code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                recovery_code:
+                  type: string
+                  pattern: ^[0-9a-f]{32}$
+      responses:
+        '200':
+          $ref: '#/components/responses/TokenResponse'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - Autenticação
+      operationId: refresh
+      summary: Rotaciona as credenciais de uma sessão
+      description: O refresh token só pode ser usado uma vez. O cliente deve substituir ambos os tokens. Replay
+        revoga a família da sessão, inclusive suas credenciais atuais. Evite renovações paralelas com o mesmo
+        token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  writeOnly: true
+      responses:
+        '200':
+          $ref: '#/components/responses/TokenResponse'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+  /api/v1/auth/logout:
+    delete:
+      tags:
+      - Autenticação
+      operationId: logout
+      summary: Revoga a sessão autenticada
+      responses:
+        '204':
+          description: Sessão revogada; resposta sem corpo.
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+  /api/v1/auth/email_verifications:
+    post:
+      tags:
+      - Autenticação
+      operationId: requestEmailVerification
+      summary: Solicita instruções de confirmação de e-mail
+      description: Responde de forma genérica, sem revelar se o endereço está cadastrado.
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/EmailRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/InstructionsResponse'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+    patch:
+      tags:
+      - Autenticação
+      operationId: confirmEmail
+      summary: Confirma e-mail com um token de uso único
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - token
+              properties:
+                token:
+                  type: string
+                  writeOnly: true
+      responses:
+        '200':
+          description: E-mail confirmado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: E-mail verificado.
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+  /api/v1/auth/password_resets:
+    post:
+      tags:
+      - Autenticação
+      operationId: requestPasswordReset
+      summary: Solicita instruções para redefinir a senha
+      description: Responde de forma genérica, sem revelar se o endereço está cadastrado.
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/EmailRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/InstructionsResponse'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+    patch:
+      tags:
+      - Autenticação
+      operationId: resetPassword
+      summary: Redefine senha com um token de uso único
+      description: A redefinição válida revoga as sessões anteriores.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - token
+              - password
+              - password_confirmation
+              properties:
+                token:
+                  type: string
+                  writeOnly: true
+                password:
+                  type: string
+                  format: password
+                  writeOnly: true
+                password_confirmation:
+                  type: string
+                  format: password
+                  writeOnly: true
+      responses:
+        '200':
+          description: Senha redefinida e sessões anteriores revogadas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: Senha atualizada.
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+  /api/v1/me:
+    get:
+      tags:
+      - Perfil
+      operationId: showCurrentUser
+      summary: Consulta o perfil do usuário autenticado
+      responses:
+        '200':
+          $ref: '#/components/responses/UserResponse'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+    patch:
+      tags:
+      - Perfil
+      operationId: updateCurrentUser
+      summary: Atualiza os campos permitidos do próprio perfil
+      description: CPF, e-mail e data de nascimento são imutáveis na Fase 1. Role, status, credenciais e identidade
+        de proprietário não são campos editáveis.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - user
+              properties:
+                user:
+                  $ref: '#/components/schemas/ProfileUpdate'
+      responses:
+        '200':
+          $ref: '#/components/responses/UserResponse'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+    delete:
+      tags:
+      - Perfil
+      operationId: deactivateCurrentUser
+      summary: Desativa o usuário e revoga suas sessões
+      description: Desativação é mudança de estado; não representa eliminação integral de dados pessoais.
+      responses:
+        '204':
+          description: Usuário desativado; resposta sem corpo.
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+  /api/v1/sessions:
+    get:
+      tags:
+      - Sessões
+      operationId: listCurrentUserSessions
+      summary: Lista metadados das sessões do próprio usuário
+      responses:
+        '200':
+          description: Sessões no escopo do usuário autenticado; tokens e hashes não são expostos.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - sessions
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+  /api/v1/sessions/{id}:
+    delete:
+      tags:
+      - Sessões
+      operationId: revokeCurrentUserSession
+      summary: Revoga uma sessão pertencente ao usuário autenticado
+      description: Identificadores inexistentes ou pertencentes a outro usuário recebem HTTP 404.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Sessão revogada; resposta sem corpo.
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/account:
+    get:
+      tags:
+      - Contas
+      operationId: get_account
+      summary: Consulta a própria conta
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      tags:
+      - Contas
+      operationId: post_account
+      summary: Abre uma conta fictícia por cliente
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/account/deposits:
+    post:
+      tags:
+      - Movimentações
+      operationId: post_account_deposits
+      summary: Depósito fictício
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction:
+                    $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount_cents:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  maximum: 9000000000000000
+                description:
+                  type: string
+                  maxLength: 160
+              required:
+              - amount_cents
+  /api/v1/account/withdrawals:
+    post:
+      tags:
+      - Movimentações
+      operationId: post_account_withdrawals
+      summary: Saque fictício
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction:
+                    $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount_cents:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  maximum: 9000000000000000
+                description:
+                  type: string
+                  maxLength: 160
+              required:
+              - amount_cents
+  /api/v1/account/block:
+    post:
+      tags:
+      - Contas
+      operationId: post_account_block
+      summary: Bloqueia preventivamente a própria conta
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/account/close:
+    post:
+      tags:
+      - Contas
+      operationId: post_account_close
+      summary: Encerra a própria conta vazia, sem agendamentos pendentes
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/transfers:
+    post:
+      tags:
+      - Movimentações
+      operationId: post_transfers
+      summary: Transfere dinheiro fictício atomicamente entre contas
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction:
+                    $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                destination_account_number: &id003
+                  type: string
+                  maxLength: 20
+                amount_cents: &id004
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  maximum: 9000000000000000
+                description: &id005
+                  type: string
+                  maxLength: 160
+              required:
+              - destination_account_number
+              - amount_cents
+  /api/v1/transactions:
+    get:
+      tags:
+      - Movimentações
+      operationId: get_transactions
+      summary: Extrato próprio com filtros e paginação
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Período máximo366dias; padrão últimos30dias.
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 999999
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - deposit
+          - withdrawal
+          - transfer
+          - reversal
+      - name: from
+        in: query
+        required: false
+        schema: &id001
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        schema: *id001
+  /api/v1/transactions/{id}:
+    get:
+      tags:
+      - Movimentações
+      operationId: get_transactions_id
+      summary: Consulta movimentação pertencente à conta
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction:
+                    $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: &id002
+          type: string
+          format: uuid
+  /api/v1/transactions/{id}/receipt:
+    get:
+      tags:
+      - Movimentações
+      operationId: get_transactions_id_receipt
+      summary: Comprovante JSON com indicação de simulação
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receipt:
+                    $ref: '#/components/schemas/Receipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+  /api/v1/transactions/{id}/reverse:
+    post:
+      tags:
+      - Movimentações
+      operationId: post_transactions_id_reverse
+      summary: Estorna depósito/saque simulado elegível
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction:
+                    $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      description: Somente o iniciador, em até24horas, com saldo e limites válidos. Lançamentos compensatórios
+        preservam o original. Transferências concluídas não podem ser canceladas unilateralmente.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      - $ref: '#/components/parameters/IdempotencyKey'
+  /api/v1/scheduled_transfers:
+    get:
+      tags:
+      - Agendamentos
+      operationId: get_scheduled_transfers
+      summary: Lista agendamentos próprios
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scheduled_transfers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScheduledTransfer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      tags:
+      - Agendamentos
+      operationId: post_scheduled_transfers
+      summary: Agenda transferência simulada
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scheduled_transfer:
+                    $ref: '#/components/schemas/ScheduledTransfer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      description: Não reserva saldo. Revalida tudo ao executar. Agendamentos que exigiriam MFA imediato são
+        rejeitados.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                destination_account_number: *id003
+                amount_cents: *id004
+                description: *id005
+                scheduled_at: &id009
+                  type: string
+                  format: date-time
+              required:
+              - destination_account_number
+              - amount_cents
+              - scheduled_at
+  /api/v1/scheduled_transfers/{id}:
+    delete:
+      tags:
+      - Agendamentos
+      operationId: delete_scheduled_transfers_id
+      summary: Cancela agendamento próprio pendente
+      responses:
+        '204':
+          description: Concluído sem corpo.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+  /api/v1/dashboard:
+    get:
+      tags:
+      - Dashboard
+      operationId: get_dashboard
+      summary: Resumo financeiro e evolução contábil
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    allOf:
+                    - $ref: '#/components/schemas/Account'
+                    nullable: true
+                  month_income_cents:
+                    $ref: '#/components/schemas/Cents'
+                  month_expenses_cents:
+                    $ref: '#/components/schemas/Cents'
+                  evolution:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JsonObject'
+                  recent_transactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  alerts:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/notifications:
+    get:
+      tags:
+      - Notificações
+      operationId: get_notifications
+      summary: Lista notificações próprias
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/notifications/{id}/read:
+    patch:
+      tags:
+      - Notificações
+      operationId: patch_notifications_id_read
+      summary: Marca notificação própria como lida
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notification:
+                    $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+  /api/v1/loan_simulations:
+    post:
+      tags:
+      - Crédito
+      operationId: post_loan_simulations
+      summary: Simula elegibilidade, Price e CET estimado
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  simulation:
+                    $ref: '#/components/schemas/LoanSimulation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: &id006
+                amount_cents:
+                  type: integer
+                  format: int64
+                  minimum: 1000
+                  maximum: 100000000
+                term_months:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  maximum: 120
+                monthly_debt_payment_cents:
+                  $ref: '#/components/schemas/Cents'
+              required:
+              - amount_cents
+              - term_months
+  /api/v1/loans:
+    get:
+      tags:
+      - Crédito
+      operationId: get_loans
+      summary: Histórico de solicitações próprias
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Loan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      tags:
+      - Crédito
+      operationId: post_loans
+      summary: Registra solicitação sem desembolso de dinheiro
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan:
+                    $ref: '#/components/schemas/Loan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *id006
+              required:
+              - amount_cents
+              - term_months
+  /api/v1/loans/{id}:
+    get:
+      tags:
+      - Crédito
+      operationId: get_loans_id
+      summary: Consulta solicitação própria e parcelas simuladas
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan:
+                    $ref: '#/components/schemas/Loan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+  /api/v1/loans/{id}/appeals:
+    post:
+      tags:
+      - Crédito
+      operationId: post_loans_id_appeals
+      summary: Contesta rejeição simulada
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  appeal:
+                    $ref: '#/components/schemas/JsonObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 2000
+              required:
+              - reason
+  /api/v1/investment_profile:
+    get:
+      tags:
+      - Investimentos
+      operationId: get_investment_profile
+      summary: Consulta perfil educativo próprio
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  investment_profile:
+                    $ref: '#/components/schemas/InvestmentProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      tags:
+      - Investimentos
+      operationId: post_investment_profile
+      summary: Avalia adequação, reserva e diversificação
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  investment_profile:
+                    $ref: '#/components/schemas/InvestmentProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                answers:
+                  type: object
+                  properties:
+                    risk_tolerance:
+                      type: string
+                      enum:
+                      - low
+                      - medium
+                      - high
+                    knowledge:
+                      type: string
+                      enum:
+                      - beginner
+                      - intermediate
+                      - advanced
+                    horizon_months:
+                      type: integer
+                      format: int64
+                      minimum: 1
+                      maximum: 600
+                    liquidity_need:
+                      type: string
+                      enum:
+                      - low
+                      - medium
+                      - high
+                    emergency_reserve_cents:
+                      $ref: '#/components/schemas/Cents'
+                    goal:
+                      type: string
+                      maxLength: 200
+                      minLength: 3
+                    monthly_contribution_cents:
+                      $ref: '#/components/schemas/Cents'
+                  required:
+                  - risk_tolerance
+                  - knowledge
+                  - horizon_months
+                  - liquidity_need
+                  - emergency_reserve_cents
+                  - goal
+                  - monthly_contribution_cents
+              required:
+              - answers
+  /api/v1/investment_products:
+    get:
+      tags:
+      - Investimentos
+      operationId: get_investment_products
+      summary: Oito classes educativas com taxas fictícias explícitas
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JsonObject'
+                  disclaimer:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/investment_simulations:
+    get:
+      tags:
+      - Investimentos
+      operationId: get_investment_simulations
+      summary: Lista simulações próprias
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  investment_simulations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InvestmentSimulation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      tags:
+      - Investimentos
+      operationId: post_investment_simulations
+      summary: Projeta aportes, cenários ou carteira diversificada
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  investment_simulation:
+                    $ref: '#/components/schemas/InvestmentSimulation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      description: Informe annual_rate_percent ou allocations somando100%. A carteira usa taxas fictícias dos
+        produtos; não executa investimentos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                initial_amount_cents:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  maximum: 100000000
+                monthly_contribution_cents:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  maximum: 100000000
+                months:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  maximum: 600
+                annual_rate_percent:
+                  type: string
+                  description: Taxa anual fictícia em decimal exato entre-20e50.
+                allocations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      product_id:
+                        type: string
+                      allocation_percent:
+                        type: integer
+                        format: int64
+                        minimum: 1
+                        maximum: 100
+                    required:
+                    - product_id
+                    - allocation_percent
+              required:
+              - initial_amount_cents
+              - monthly_contribution_cents
+              - months
+  /api/v1/investment_simulations/{id}:
+    get:
+      tags:
+      - Investimentos
+      operationId: get_investment_simulations_id
+      summary: Consulta simulação própria
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  investment_simulation:
+                    $ref: '#/components/schemas/InvestmentSimulation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+  /api/v1/financial_goals:
+    get:
+      tags:
+      - Objetivos
+      operationId: get_financial_goals
+      summary: Lista objetivos próprios
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  financial_goals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FinancialGoal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      tags:
+      - Objetivos
+      operationId: post_financial_goals
+      summary: Cria objetivo próprio
+      responses:
+        '201':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  financial_goal:
+                    $ref: '#/components/schemas/FinancialGoal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: &id007
+                financial_goal:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      maxLength: 120
+                      minLength: 3
+                    target_cents:
+                      type: integer
+                      format: int64
+                      minimum: 1
+                      maximum: 9000000000000000
+                    target_date: *id001
+                    status:
+                      type: string
+                      enum:
+                      - active
+                      - completed
+                      - cancelled
+              required:
+              - financial_goal
+  /api/v1/financial_goals/{id}:
+    patch:
+      tags:
+      - Objetivos
+      operationId: patch_financial_goals_id
+      summary: Atualiza objetivo próprio
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  financial_goal:
+                    $ref: '#/components/schemas/FinancialGoal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *id007
+              required:
+              - financial_goal
+    delete:
+      tags:
+      - Objetivos
+      operationId: delete_financial_goals_id
+      summary: Remove objetivo próprio sem alterar lançamentos
+      responses:
+        '204':
+          description: Concluído sem corpo.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+  /api/v1/security:
+    get:
+      tags:
+      - Segurança
+      operationId: get_security
+      summary: Status de MFA e sessões próprias
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityStatus'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/security/mfa/enrollment:
+    post:
+      tags:
+      - Segurança
+      operationId: post_security_mfa_enrollment
+      summary: Inicia MFA após senha atual e sessão válida
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret:
+                    type: string
+                  provisioning_uri:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                  format: password
+              required:
+              - password
+  /api/v1/security/mfa/enable:
+    post:
+      tags:
+      - Segurança
+      operationId: post_security_mfa_enable
+      summary: Ativa MFA e entrega códigos de recuperação uma vez
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recovery_codes:
+                    type: array
+                    items:
+                      type: string
+                  mfa_enabled:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+              required:
+              - code
+  /api/v1/security/mfa/verify:
+    post:
+      tags:
+      - Segurança
+      operationId: post_security_mfa_verify
+      summary: Confirma segundo fator por cinco minutos
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified: &id008
+                    type: boolean
+                  verified_until:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                recovery_code:
+                  type: string
+  /api/v1/security/mfa:
+    delete:
+      tags:
+      - Segurança
+      operationId: delete_security_mfa
+      summary: Desativa MFA do cliente e revoga todas as sessões
+      responses:
+        '204':
+          description: Concluído sem corpo.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Administradores não podem reduzir a autenticação a senha apenas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                  format: password
+                code:
+                  type: string
+                recovery_code:
+                  type: string
+              required:
+              - password
+  /api/v1/admin/users:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_users
+      summary: 'Administração: lista users'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Exige papel administrativo, MFA ativo e verificação recente.
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000
+      - name: per_page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+  /api/v1/admin/accounts:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_accounts
+      summary: 'Administração: lista accounts'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Exige papel administrativo, MFA ativo e verificação recente.
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000
+      - name: per_page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+  /api/v1/admin/transactions:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_transactions
+      summary: 'Administração: lista transactions'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Exige papel administrativo, MFA ativo e verificação recente.
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000
+      - name: per_page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+  /api/v1/admin/security_events:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_security_events
+      summary: 'Administração: lista security_events'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  security_events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JsonObject'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Exige papel administrativo, MFA ativo e verificação recente.
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000
+      - name: per_page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+  /api/v1/admin/loans:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_loans
+      summary: 'Administração: lista loans'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Loan'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Exige papel administrativo, MFA ativo e verificação recente.
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000
+      - name: per_page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+  /api/v1/admin/audit_logs:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_audit_logs
+      summary: 'Administração: lista audit_logs'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  audit_logs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JsonObject'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Exige papel administrativo, MFA ativo e verificação recente.
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000
+      - name: per_page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+  /api/v1/admin/overview:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_overview
+      summary: Indicadores administrativos da simulação
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/admin/accounts/{id}/block:
+    post:
+      tags:
+      - Administração
+      operationId: post_admin_accounts_id_block
+      summary: 'Administração: block conta com auditoria'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 300
+              required:
+              - reason
+  /api/v1/admin/accounts/{id}/unblock:
+    post:
+      tags:
+      - Administração
+      operationId: post_admin_accounts_id_unblock
+      summary: 'Administração: unblock conta com auditoria'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 300
+              required:
+              - reason
+  /api/v1/admin/security_events/{id}/review:
+    post:
+      tags:
+      - Administração
+      operationId: post_admin_security_events_id_review
+      summary: Registra revisão de alerta
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 500
+              required:
+              - reason
+  /api/v1/admin/loans/{id}/review:
+    post:
+      tags:
+      - Administração
+      operationId: post_admin_loans_id_review
+      summary: Decide revisão de crédito sem desembolso
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan:
+                    $ref: '#/components/schemas/Loan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - approved
+                  - rejected
+                  - approve
+                  - reject
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 1000
+              required:
+              - decision
+              - reason
+  /api/v1/admin/credit_rules:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_credit_rules
+      summary: Consulta regras de credit_rules
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      tags:
+      - Administração
+      operationId: patch_admin_credit_rules
+      summary: Atualiza regras permitidas de credit_rules com auditoria
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      description: Somente chaves conhecidas e valores com limites; nenhuma expressão executável é aceita.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config:
+                  $ref: '#/components/schemas/JsonObject'
+              required:
+              - config
+  /api/v1/admin/financial_rules:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_financial_rules
+      summary: Consulta regras de financial_rules
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      tags:
+      - Administração
+      operationId: patch_admin_financial_rules
+      summary: Atualiza regras permitidas de financial_rules com auditoria
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '415':
+          description: JSON obrigatório, no máximo32768bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      description: Somente chaves conhecidas e valores com limites; nenhuma expressão executável é aceita.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rules:
+                  $ref: '#/components/schemas/JsonObject'
+              required:
+              - rules
+  /api/v1/admin/exports.xlsx:
+    get:
+      tags:
+      - Administração
+      operationId: get_admin_exports_xlsx
+      summary: Exporta XLSX autorizado, filtrado e auditado
+      responses:
+        '200':
+          description: XLSX com no máximo5000linhas, sem segredos e com texto protegido contra fórmulas.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: kind
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - accounts
+          - transactions
+          - loans
+          - loan_analyses
+          - investment_profiles
+          - financial_report
+      - name: from
+        in: query
+        required: false
+        schema: *id001
+      - name: to
+        in: query
+        required: false
+        schema: *id001
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Access token opaco de curta duração; não é JWT.
+  requestBodies:
+    EmailRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - email
+            properties:
+              email:
+                type: string
+                format: email
+  responses:
+    UserResponse:
+      description: Perfil permitido do usuário, sem papel administrativo, hashes ou tokens.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+            - user
+            properties:
+              user:
+                $ref: '#/components/schemas/User'
+    TokenResponse:
+      description: Novas credenciais; substitua as credenciais anteriores de forma conjunta.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TokenPair'
+    InstructionsResponse:
+      description: Solicitação aceita sem confirmar a existência do cadastro.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+          example:
+            message: Se os dados forem válidos, você receberá as instruções.
+    ValidationError:
+      description: Entrada inválida ou token de propósito inválido, expirado ou já consumido.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AuthenticationError:
+      description: Credenciais inválidas, expiradas, revogadas ou insuficientes para autenticação.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFoundError:
+      description: Recurso indisponível no escopo do usuário autenticado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimitError:
+      description: Limite de requisições excedido.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+      headers:
+        Retry-After:
+          description: Período do limitador atingido em segundos; respeite a espera antes de repetir.
+          schema:
+            type: integer
+            minimum: 1
+    BadRequestError:
+      description: Estrutura JSON inválida ou parâmetro obrigatório ausente.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    PayloadTooLargeError:
+      description: O corpo excede o limite de 32 KiB (32768 bytes).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnsupportedMediaTypeError:
+      description: POST e PATCH exigem Content-Type application/json.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Acesso negado, conta bloqueada ou MFA adicional necessário.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Conflito de idempotência ou estado da operação.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unavailable:
+      description: Dependência temporariamente indisponível.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BadRequest:
+      description: Erro HTTP400; ver error.code e error.message.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Erro HTTP401; ver error.code e error.message.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Erro HTTP404; ver error.code e error.message.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: Erro HTTP429; ver error.code e error.message.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    Address:
+      type: object
+      additionalProperties: false
+      required:
+      - street
+      - number
+      - city
+      - state
+      - postal_code
+      properties:
+        street:
+          type: string
+          minLength: 1
+          maxLength: 160
+        number:
+          type: string
+          minLength: 1
+          maxLength: 160
+        city:
+          type: string
+          minLength: 1
+          maxLength: 160
+        state:
+          type: string
+          minLength: 1
+          maxLength: 160
+          pattern: ^[A-Z]{2}$
+          example: SP
+        postal_code:
+          type: string
+          minLength: 1
+          maxLength: 160
+          pattern: ^[0-9]{8}$
+          example: '01001000'
+    Registration:
+      type: object
+      additionalProperties: false
+      required:
+      - full_name
+      - cpf
+      - birth_date
+      - email
+      - phone
+      - address
+      - profession
+      - monthly_salary_cents
+      - password
+      - password_confirmation
+      properties:
+        full_name:
+          type: string
+          maxLength: 150
+        cpf:
+          type: string
+          writeOnly: true
+          description: CPF de teste com dígitos verificadores válidos; não representa verificação de identidade.
+        birth_date:
+          type: string
+          format: date
+          description: Entre 1900-01-01 e a data correspondente a 18 anos antes da data atual.
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        phone:
+          type: string
+          pattern: ^\+[1-9][0-9]{9,14}$
+          example: '+5511999990000'
+          description: Telefone no formato internacional E.164.
+        address:
+          $ref: '#/components/schemas/Address'
+        profession:
+          type: string
+          maxLength: 120
+        monthly_salary_cents:
+          $ref: '#/components/schemas/Cents'
+        other_income_cents:
+          allOf:
+          - $ref: '#/components/schemas/Cents'
+          default: 0
+        monthly_expenses_cents:
+          allOf:
+          - $ref: '#/components/schemas/Cents'
+          default: 0
+        existing_debts_cents:
+          allOf:
+          - $ref: '#/components/schemas/Cents'
+          default: 0
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 12
+          maxLength: 128
+          description: Senha de 12 a 128 caracteres e no máximo 512 bytes; confirmação deve coincidir.
+        password_confirmation:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 12
+          maxLength: 128
+          description: Senha de 12 a 128 caracteres e no máximo 512 bytes; confirmação deve coincidir.
+    ProfileUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        full_name:
+          type: string
+          maxLength: 150
+        phone:
+          type: string
+          pattern: ^\+[1-9][0-9]{9,14}$
+          example: '+5511999990000'
+          description: Telefone no formato internacional E.164.
+        address:
+          $ref: '#/components/schemas/Address'
+        profession:
+          type: string
+          maxLength: 120
+        monthly_salary_cents:
+          $ref: '#/components/schemas/Cents'
+        other_income_cents:
+          $ref: '#/components/schemas/Cents'
+        monthly_expenses_cents:
+          $ref: '#/components/schemas/Cents'
+        existing_debts_cents:
+          $ref: '#/components/schemas/Cents'
+    Cents:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9000000000000000
+    User:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - full_name
+      - cpf
+      - email
+      - birth_date
+      - phone
+      - address
+      - profession
+      - monthly_salary_cents
+      - other_income_cents
+      - monthly_expenses_cents
+      - existing_debts_cents
+      - income_commitment_percent
+      - investor_profile
+      - status
+      - email_verified
+      - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        full_name:
+          type: string
+          maxLength: 150
+        cpf:
+          type: string
+          readOnly: true
+          pattern: ^\*{3}\.\*{3}\.\*{3}-[0-9]{2}$
+          example: '***.***.***-25'
+          description: CPF mascarado; somente os dois últimos dígitos são retornados.
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        birth_date:
+          type: string
+          format: date
+        phone:
+          type: string
+          pattern: ^\+[1-9][0-9]{9,14}$
+          example: '+5511999990000'
+          description: Telefone no formato internacional E.164.
+        address:
+          $ref: '#/components/schemas/Address'
+        profession:
+          type: string
+          maxLength: 120
+        monthly_salary_cents:
+          $ref: '#/components/schemas/Cents'
+        other_income_cents:
+          $ref: '#/components/schemas/Cents'
+        monthly_expenses_cents:
+          $ref: '#/components/schemas/Cents'
+        existing_debts_cents:
+          $ref: '#/components/schemas/Cents'
+        income_commitment_percent:
+          type: string
+          description: Percentual calculado no servidor, serializado como decimal exato em texto.
+          example: '35.0'
+        investor_profile:
+          type: string
+          description: Não equivale a recomendação ou questionário implementado; módulo previsto na Fase 5.
+          enum:
+          - not_assessed
+          - conservative
+          - moderate
+          - aggressive
+        status:
+          type: string
+          readOnly: true
+          enum:
+          - active
+          - blocked
+          - deactivated
+        email_verified:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        role:
+          type: string
+          enum:
+          - customer
+          - admin
+        mfa_enabled: *id008
+    TokenPair:
+      type: object
+      additionalProperties: false
+      required:
+      - access_token
+      - refresh_token
+      - token_type
+      - expires_in
+      properties:
+        access_token:
+          type: string
+          description: Credencial opaca com validade de 15 minutos.
+        refresh_token:
+          type: string
+          description: Credencial opaca rotacionável; validade de 30 dias.
+        token_type:
+          type: string
+          enum:
+          - Bearer
+        expires_in:
+          type: integer
+          enum:
+          - 900
+          description: Validade do access token em segundos.
+    Session:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - created_at
+      - last_used_at
+      - expires_at
+      - current
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+    Message:
+      type: object
+      required:
+      - message
+      properties:
+        message:
+          type: string
+    ErrorEnvelope:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              oneOf:
+              - type: array
+                items:
+                  type: string
+              - type: object
+                additionalProperties: true
+    JsonObject:
+      type: object
+      additionalProperties: true
+    Account:
+      type: object
+      properties:
+        id: *id002
+        number:
+          type: string
+          example: 123456789-0
+        branch:
+          type: string
+          enum:
+          - '0001'
+        status:
+          type: string
+          enum:
+          - active
+          - blocked
+          - closed
+        available_cents:
+          $ref: '#/components/schemas/Cents'
+        blocked_cents:
+          $ref: '#/components/schemas/Cents'
+        daily_limit_cents:
+          $ref: '#/components/schemas/Cents'
+        created_at: *id009
+      required:
+      - id
+      - number
+      - branch
+      - status
+      - available_cents
+      - blocked_cents
+      - daily_limit_cents
+    Transaction:
+      type: object
+      properties:
+        id: *id002
+        kind:
+          type: string
+          enum:
+          - deposit
+          - withdrawal
+          - transfer
+          - reversal
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9000000000000000
+        description:
+          type: string
+          maxLength: 160
+        status:
+          type: string
+          enum:
+          - posted
+        direction:
+          type: string
+          enum:
+          - debit
+          - credit
+          nullable: true
+        completed_at: *id009
+        created_at: *id009
+        reverses_id:
+          type: string
+          format: uuid
+          nullable: true
+        reversed_by_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_account_number:
+          type: string
+        destination_account_number:
+          type: string
+      required:
+      - id
+      - kind
+      - amount_cents
+      - status
+    Receipt:
+      allOf:
+      - $ref: '#/components/schemas/Transaction'
+      - type: object
+        properties:
+          simulation: *id008
+          currency:
+            type: string
+            enum:
+            - BRL
+          institution:
+            type: string
+          account_number:
+            type: string
+          branch:
+            type: string
+          reference: *id002
+    ScheduledTransfer:
+      type: object
+      properties:
+        id: *id002
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9000000000000000
+        destination_account_number:
+          type: string
+        description:
+          type: string
+        scheduled_at: *id009
+        status:
+          type: string
+          enum:
+          - pending
+          - completed
+          - cancelled
+          - failed
+        failure_code:
+          type: string
+          nullable: true
+        ledger_transaction_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at: *id009
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9000000000000000
+        total_pages:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9000000000000000
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9000000000000000
+        per_page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+    Notification:
+      type: object
+      properties:
+        id: *id002
+        kind:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at: *id009
+    LoanSimulation:
+      type: object
+      properties:
+        eligible: *id008
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9000000000000000
+        term_months:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 120
+        monthly_rate_percent:
+          type: string
+        annual_effective_rate_percent:
+          type: string
+        installment_cents:
+          $ref: '#/components/schemas/Cents'
+        total_cents:
+          $ref: '#/components/schemas/Cents'
+        estimated_cet_annual_percent:
+          type: string
+        available_income_cents:
+          $ref: '#/components/schemas/Cents'
+        monthly_capacity_cents:
+          $ref: '#/components/schemas/Cents'
+        estimated_limit_cents:
+          $ref: '#/components/schemas/Cents'
+        commitment_percent:
+          type: string
+          nullable: true
+        internal_score:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 100
+        score_factors:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        reasons:
+          type: array
+          items:
+            type: string
+        assumptions:
+          type: array
+          items:
+            type: string
+        schedule:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        alternative_terms:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        rule_version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9000000000000000
+    Loan:
+      type: object
+      properties:
+        id: *id002
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9000000000000000
+        term_months:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 120
+        monthly_rate_percent:
+          type: string
+        installment_cents:
+          $ref: '#/components/schemas/Cents'
+        total_cents:
+          $ref: '#/components/schemas/Cents'
+        status:
+          type: string
+          enum:
+          - pending_review
+          - rejected
+          - approved
+          - reviewed_rejected
+        simulation: *id008
+        eligibility_snapshot:
+          $ref: '#/components/schemas/LoanSimulation'
+        rule_version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9000000000000000
+        installments:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        appeals:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        review_reason:
+          type: string
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at: *id009
+    InvestmentProfile:
+      type: object
+      properties:
+        id: *id002
+        profile:
+          type: string
+          enum:
+          - conservative
+          - moderate
+          - aggressive
+        score:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 100
+        answers:
+          $ref: '#/components/schemas/JsonObject'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        emergency_target_cents:
+          $ref: '#/components/schemas/Cents'
+        available_to_invest_cents:
+          $ref: '#/components/schemas/Cents'
+        warnings:
+          type: array
+          items:
+            type: string
+        disclaimer:
+          type: string
+    InvestmentSimulation:
+      type: object
+      properties:
+        id: *id002
+        initial_amount_cents:
+          $ref: '#/components/schemas/Cents'
+        monthly_contribution_cents:
+          $ref: '#/components/schemas/Cents'
+        months:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 600
+        annual_rate_percent:
+          type: string
+        final_cents:
+          $ref: '#/components/schemas/Cents'
+        contributed_cents:
+          $ref: '#/components/schemas/Cents'
+        earnings_cents:
+          type: integer
+          format: int64
+          minimum: -9000000000000000
+          maximum: 9000000000000000
+        projection:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        scenarios:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        portfolio:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonObject'
+        disclaimer:
+          type: string
+        created_at: *id009
+    FinancialGoal:
+      type: object
+      properties:
+        id: *id002
+        name:
+          type: string
+        target_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9000000000000000
+        target_date: *id001
+        status:
+          type: string
+          enum:
+          - active
+          - completed
+          - cancelled
+    SecurityStatus:
+      type: object
+      properties:
+        mfa_enabled: *id008
+        recovery_codes_remaining:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 8
+        mfa_verified_until:
+          type: string
+          format: date-time
+          nullable: true
+        active_sessions:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9000000000000000
+        role:
+          type: string
+          enum:
+          - customer
+          - admin
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Chave estável por intenção de operação. Reenvio com os mesmos dados devolve o resultado
+        anterior; dados diferentes retornam409. Não reutilize a chave em outra operação.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: ^[a-zA-Z0-9._:-]+$

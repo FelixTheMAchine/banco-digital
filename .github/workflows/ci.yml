@@ -1,0 +1,224 @@
+name: Aurora verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Rails — API, concorrência e segurança
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: banco_digital_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d banco_digital_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/banco_digital_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/banco_digital_test
+      REDIS_URL: redis://127.0.0.1:6379/1
+      APP_ORIGINS: http://localhost:3000
+      RUN_DEMO_SEEDS: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cliente PostgreSQL 17
+        uses: ./.github/actions/postgresql-client
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.11"
+          bundler-cache: true
+          working-directory: backend
+      - name: Preparar banco e verificar autoload
+        run: |
+          pg_dump --version
+          bundle exec rails db:prepare
+          bundle exec rails zeitwerk:check
+      - name: Modelos, API, concorrência e falhas de conexão
+        run: bundle exec rspec
+      - name: Análise estática Rails
+        run: bundle exec brakeman --no-pager
+      - name: Dependências Ruby
+        run: bundle exec bundler-audit check --update
+
+  web:
+    name: Web — tipos, testes, build e dependências
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Dependências usadas em produção web
+        run: npm audit --omit=dev --audit-level=high
+
+  mobile:
+    name: Mobile — tipos, testes e bundles Android/iOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      APP_VARIANT: production
+      EXPO_PUBLIC_API_URL: https://api.example.test
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx expo install --check
+      - name: Gerar bundles Hermes; não são binários assinados
+        run: npm run export
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-javascript-bundles
+          path: mobile/dist/
+          retention-days: 7
+
+  mobile_dependency_security:
+    name: Mobile — bloqueio de vulnerabilidades conhecidas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      # O relatório atual contém avisos upstream sem correção. Este job deve
+      # falhar até uma atualização revisada resolver os alertas high/critical.
+      # Não há continue-on-error, exclusões ou promoção automática de release.
+      - name: Auditar todo o lockfile, incluindo o toolchain
+        run: npm audit --package-lock-only --audit-level=high --json > mobile-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-dependency-security
+          path: mobile/mobile-audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  web_e2e:
+    name: Navegador — API real, MFA e XLSX
+    needs: [backend, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: banco_digital_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d banco_digital_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/banco_digital_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/banco_digital_test
+      REDIS_URL: redis://127.0.0.1:6379/1
+      APP_ORIGINS: http://localhost:3000
+      RUN_DEMO_SEEDS: "0"
+      NEXT_TELEMETRY_DISABLED: "1"
+      E2E_API_URL: http://127.0.0.1:3001
+      E2E_WEB_URL: http://localhost:3000
+      E2E_EMAIL: marina@example.test
+      E2E_RECIPIENT_EMAIL: lucas@example.test
+      # Exclusiva de dados fictícios no banco efêmero do runner.
+      E2E_PASSWORD: CI-Aurora-Ficticia-2026
+      E2E_ADMIN_FIXTURE: ${{ github.workspace }}/backend/tmp/ci-admin-fixture.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/postgresql-client
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.11"
+          bundler-cache: true
+          working-directory: backend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Preparar API com fixtures exclusivamente de teste
+        working-directory: backend
+        run: |
+          bundle exec rails db:prepare
+          bundle exec rails runner ../scripts/ci-seed.rb
+          bundle exec rails server -e test -b 127.0.0.1 -p 3001 > tmp/ci-api.log 2>&1 &
+          echo $! > tmp/ci-api.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3001/api/v1/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3001/api/v1/health
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - name: Fluxos completos; não persistir traces com credenciais de teste
+        working-directory: web
+        run: npm run test:e2e -- --trace off
+      - name: Encerrar o processo de API criado pelo job
+        if: always()
+        working-directory: backend
+        run: |
+          if [ -f tmp/ci-api.pid ]; then kill "$(cat tmp/ci-api.pid)" 2>/dev/null || true; fi

@@ -1,0 +1,23 @@
+source "https://rubygems.org"
+
+ruby "~> 3.4.0"
+gem "rails", "~> 8.1.0"
+gem "pg", "~> 1.6"
+gem "puma", "~> 8.0", ">= 8.0.2"
+gem "argon2", "~> 2.3"
+gem "redis", "~> 5.4"
+gem "sidekiq", "~> 7.3"
+# Sidekiq 7 uses TimedStack#pop(timeout); connection_pool 3 removed that API.
+gem "connection_pool", "~> 2.5"
+gem "rack-attack", "~> 6.8"
+gem "rack-cors", "~> 3.0"
+gem "rotp", "~> 6.3"
+gem "caxlsx", "~> 4.4"
+
+group :development, :test do
+  gem "rspec-rails", "~> 8.0"
+  gem "brakeman", "~> 7.0", require: false
+  gem "bundler-audit", "~> 0.9", require: false
+end
+
+gem "tzinfo-data", platforms: %i[windows jruby]

@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.example
+.bundle
+vendor/bundle
+log/*
+tmp/*
+coverage
+storage/*
+config/master.key
+config/credentials/*.key

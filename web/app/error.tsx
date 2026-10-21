@@ -1,0 +1,2 @@
+"use client";
+export default function ErrorBoundary({ reset }: { error: Error & {digest?:string}; reset: () => void }) { return <main className="content"><div className="card"><p className="eyebrow">Vamos tentar de novo</p><h1>Não foi possível carregar esta tela.</h1><p className="muted">Nenhuma operação deve ser repetida sem antes conferir o extrato.</p><button className="button" onClick={reset}>Tentar novamente</button></div></main>; }

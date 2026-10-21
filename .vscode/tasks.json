@@ -1,0 +1,69 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Banco: iniciar ambiente local",
+      "type": "shell",
+      "command": "bash scripts/setup.sh",
+      "windows": {
+        "command": "powershell -NoProfile -File scripts/setup.ps1"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: executar RSpec",
+      "type": "shell",
+      "command": "bash scripts/test.sh",
+      "windows": {
+        "command": "powershell -NoProfile -File scripts/test.ps1"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: build web",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/web"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: testes web",
+      "type": "shell",
+      "command": "npm test",
+      "options": {
+        "cwd": "${workspaceFolder}/web"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: testes mobile",
+      "type": "shell",
+      "command": "npm test",
+      "options": {
+        "cwd": "${workspaceFolder}/mobile"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: iniciar Expo",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/mobile"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Banco: reconciliar livro-razão",
+      "type": "shell",
+      "command": "docker compose exec api bundle exec rails banking:reconcile",
+      "problemMatcher": []
+    }
+  ]
+}

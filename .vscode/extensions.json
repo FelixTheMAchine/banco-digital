@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "Shopify.ruby-lsp",
+    "ms-azuretools.vscode-docker",
+    "editorconfig.editorconfig",
+    "redhat.vscode-yaml"
+  ]
+}
