@@ -113,7 +113,7 @@ jobs:
       - run: npx expo install --check
       - name: Gerar bundles Hermes; não são binários assinados
         run: npm run export
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mobile-javascript-bundles
           path: mobile/dist/
@@ -138,7 +138,7 @@ jobs:
       # Não há continue-on-error, exclusões ou promoção automática de release.
       - name: Auditar todo o lockfile, incluindo o toolchain
         run: npm audit --package-lock-only --audit-level=high --json > mobile-audit.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mobile-dependency-security
