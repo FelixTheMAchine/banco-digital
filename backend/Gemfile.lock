@@ -256,12 +256,12 @@ GEM
     rspec-support (3.13.7)
     rubyzip (3.7.0)
     securerandom (0.4.1)
-    sidekiq (7.3.9)
-      base64
-      connection_pool (>= 2.3.0)
-      logger
-      rack (>= 2.2.4)
-      redis-client (>= 0.22.2)
+    sidekiq (8.0.10)
+      connection_pool (>= 2.5.0)
+      json (>= 2.9.0)
+      logger (>= 1.6.2)
+      rack (>= 3.1.0)
+      redis-client (>= 0.23.2)
     thor (1.5.0)
     timeout (0.6.1)
     tsort (0.2.0)
@@ -300,7 +300,7 @@ DEPENDENCIES
   redis (~> 5.4)
   rotp (~> 6.3)
   rspec-rails (~> 8.0)
-  sidekiq (~> 7.3)
+  sidekiq (~> 8.0)
   tzinfo-data
 
 RUBY VERSION
