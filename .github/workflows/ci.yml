@@ -46,7 +46,7 @@ jobs:
       APP_ORIGINS: http://localhost:3000
       RUN_DEMO_SEEDS: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Cliente PostgreSQL 17
         uses: ./.github/actions/postgresql-client
       - uses: ruby/setup-ruby@v1
@@ -76,7 +76,7 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -101,7 +101,7 @@ jobs:
       EXPO_PUBLIC_API_URL: https://api.example.test
       EXPO_NO_TELEMETRY: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -127,7 +127,7 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -184,7 +184,7 @@ jobs:
       E2E_PASSWORD: CI-Aurora-Ficticia-2026
       E2E_ADMIN_FIXTURE: ${{ github.workspace }}/backend/tmp/ci-admin-fixture.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/postgresql-client
       - uses: ruby/setup-ruby@v1
         with:
