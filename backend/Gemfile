@@ -11,7 +11,7 @@ gem "sidekiq", "~> 7.3"
 gem "connection_pool", "~> 2.5"
 gem "rack-attack", "~> 6.8"
 gem "rack-cors", "~> 3.0"
-gem "rotp", "~> 6.3"
+gem "rotp", "~> 6.4"
 gem "caxlsx", "~> 4.4"
 
 group :development, :test do

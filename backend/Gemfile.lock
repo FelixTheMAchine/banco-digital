@@ -236,7 +236,7 @@ GEM
       connection_pool
     reline (0.7.0)
       io-console (~> 0.5)
-    rotp (6.3.0)
+    rotp (6.4.0)
     rspec-core (3.13.6)
       rspec-support (~> 3.13.0)
     rspec-expectations (3.13.5)
@@ -298,7 +298,7 @@ DEPENDENCIES
   rack-cors (~> 3.0)
   rails (~> 8.1.0)
   redis (~> 5.4)
-  rotp (~> 6.3)
+  rotp (~> 6.4)
   rspec-rails (~> 8.0)
   sidekiq (~> 7.3)
   tzinfo-data
